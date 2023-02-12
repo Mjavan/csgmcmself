@@ -408,8 +408,6 @@ parser.add_argument('--num_classes',type=int, default=10,
                        help='the number of output classes in test set and semisupervised setting!')
 
 # Test set and dataloaders
-#parser.add_argument('--in_size',type=int, default=96,
-#                       help='the input size of images')
 
 parser.add_argument('--num_workers',type=int, default=4,
                        help='num_workers')
@@ -422,7 +420,7 @@ parser.add_argument('--exp_split',nargs="+", default=[100],
                        help='the split of train set that we want to consider')
 
 parser.add_argument('--pr_ens',type=bool, default=False,
-                       help='if we want to save pr ensemble or not (when we are not in weight & biases)!')
+                       help='if we want to save pr ensemble or not!')
 
 parser.add_argument('--eval',type=bool, default=True,
                        help='if we want to evaluate our model or not!')
@@ -451,7 +449,6 @@ def semi_supervised(args):
     
     ## setting device 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-    print(f'device:{device}')
     
     ## the directory to load checkpoints 
     save_dir  = Path('/dhc/home/masoumeh.javanbakhat/netstore-old/Baysian/3D/Self_Supervised')
@@ -460,9 +457,9 @@ def semi_supervised(args):
     exp_dir = save_dir / 'samples' / args.ds_pr 
     param_dir = save_dir / 'params' / 'finetune' / args.ds_ft / f'exp_{args.exp}_opt_{args.opt}_pr_{args.ds_pr}'
     
-    print(f'making a directory for results!')
+    
     result_dir_exp = save_dir / 'results' / f'{args.ds_ft}_{args.exp_split[0]}'/ f'{args.exp}_pr_{args.ds_pr}'
-    print(f'directory was made!')
+
     
     os.makedirs(param_dir, exist_ok=True)
     os.makedirs(result_dir_exp,exist_ok=True)
@@ -477,16 +474,6 @@ def semi_supervised(args):
     config = wandb.config
     run_name = wandb.run.name
                                       
-    print(f'type of config:{type(config)}')
-    
-    # define our custom x axis metric
-    wandb.define_metric("epoch")
-    wandb.define_metric("epoch_val")
-    # define which metrics will be plotted against it
-    wandb.define_metric("loss_train", step_metric="epoch")
-    wandb.define_metric("acc_train", step_metric="epoch")
-    wandb.define_metric("loss_val", step_metric="epoch_val")
-    wandb.define_metric("acc_val", step_metric="epoch_val")
     
     # making a dic from hyperparameters
     HPF = vars(args) 
@@ -519,8 +506,7 @@ def semi_supervised(args):
         path_tinyimagenet = save_dir/'core'/'data'/'tiny-imagenet-200'/'val'
         testset = datasets.ImageFolder(path_tinyimagenet,transform=get_transform(config['ds_ft'],in_size))
                                             
-            
-    print(f'len testset:{len(testset)}')                              
+                                         
     test_loader = DataLoader(testset,batch_size=100,num_workers=config['num_workers'],drop_last=False,shuffle=False)
     
     
@@ -535,13 +521,6 @@ def semi_supervised(args):
     
     n_ckts = n_ckts_tot - config['burn_in']
     
-    print(f'number of checkpoint to evaluate:{n_ckts}')
-    
-    # print epoch that has smallest val loss
-    #best_model =  torch.load(os.path.join(load_dir,'%s/%d_best_cbbyol.pt'%\
-    #                                     (config['ds'],config['exp'])),map_location=device) 
-    
-    #print('\n Best model is from epoch %d with val_loss:%f'%(best_model['epoch'],best_model['Loss']))
     
         
     for train_split in config['exp_split']:
@@ -557,12 +536,12 @@ def semi_supervised(args):
         with open(os.path.join(split_dir,'train_set_%s_%d_%d%%.pickle'%(config['ds_ft'],in_size,train_split)),'rb') as f:
             train_set = pickle.load(f)
             size_fin = train_set[0][0].size()
-            print(f'size image for finetun:{size_fin}')
+          
         
         with open(os.path.join(split_dir,'val_set_%s_%d_%d%%.pickle'%(config['ds_ft'],in_size,train_split)),'rb') as f:
             val_set = pickle.load(f) 
             size_val = val_set[0][0].size()
-            print(f'size image for val finetune:{size_val}')
+     
             
                                                             
         train_loader=DataLoader(train_set,batch_size=config['batch_size'],num_workers=config['num_workers'],\
@@ -570,7 +549,6 @@ def semi_supervised(args):
         val_loader=DataLoader(val_set,batch_size=config['batch_size'],num_workers=config['num_workers'],\
                               drop_last=False,shuffle=True)
         
-        print(f'training on: {(len(train_loader.dataset))} validation on: {len(val_loader.dataset)}')
         
         pr_tot = []
         log_tot= []
@@ -608,7 +586,6 @@ def semi_supervised(args):
                 encoder = nn.Sequential(*list(net.children())[:-2])
                 model = finetune_net(encoder,fv_size,config['num_classes']).to(device)
                 
-                #print(model)
                             
                 optimizer = optim.SGD(model.parameters(),lr=config['lr'],\
                                       nesterov=config['nes'],weight_decay=config['wd'],momentum=0.9)
@@ -667,7 +644,7 @@ def semi_supervised(args):
                 
                 gt_list = np.load(os.path.join(result_dir_exp,f'gts.npy'))
             
-            nll_tot,nll2_tot,acc_tot = evaluation_metrics(pr_tot,log_tot,gt_list,device,ig_sam=config['ig_sam'])
+            nll_tot,acc_tot = evaluation_metrics(pr_tot,log_tot,gt_list,device,ig_sam=config['ig_sam'])
         
         if config['write_exp']:
             
