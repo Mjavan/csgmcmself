@@ -30,6 +30,32 @@ from sklearn.model_selection import ShuffleSplit
 import warnings 
 warnings.filterwarnings('ignore')
 
+#### Plutcurve
+
+def plotCurves(stats,results_dir=None):
+    
+    fig = plt.figure(figsize=(12, 6))
+    
+    plt.subplot(1,1,1)
+
+    plt.plot(stats['train'], label='train_loss')
+    plt.plot(stats['val'], label='valid_loss')
+        
+    textsize = 12
+    marker=5
+        
+    plt.xlabel('Epochs')
+    
+    plt.ylabel('Loss')
+    
+    plt.title('NLL')
+
+    lgd = plt.legend(['train', 'validation'], markerscale=marker, 
+                 prop={'size': textsize, 'weight': 'normal'})    
+    
+    plt.savefig(results_dir , bbox_extra_artists=(lgd,), bbox_inches='tight')
+    
+
     
 
 #### Data augmentation 
