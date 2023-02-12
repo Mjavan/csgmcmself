@@ -159,7 +159,6 @@ class finetune_net(nn.Module):
         super(finetune_net,self).__init__()
         
         self.model = model
-        # This linear map is used only for fine tunning
         self.linear = nn.Linear(in_dim,num_classes)
         
     def forward(self,x):
@@ -226,7 +225,6 @@ def single_finetune(exp,model,optimizer,criterion,train_loader,val_loader,epochs
                     
                 correct += (pred==lable).sum().item()
                 
-                #print(f'epoch: {epoch}, lr:%.7f'%(optimizer.param_groups[0]['lr']))
                         
             error = total_loss/len(data_loader)
             acc = correct/len(data_loader.dataset)  
@@ -277,12 +275,6 @@ def single_finetune(exp,model,optimizer,criterion,train_loader,val_loader,epochs
 #### Testing on test set 
 def inference(model,test_loader,criterion,device):
     
-    #for m in model.modules():
-    #    for child in m.children():
-    #        if type(child) == nn.BatchNorm2d:
-    #            child.track_running_stats = False
-    #            child.running_mean = None
-    #            child.running_var = None
     
     model.eval()    
     test_loss =0     
@@ -321,18 +313,12 @@ def inference(model,test_loader,criterion,device):
         out_pr = np.concatenate(out_pr)
         logits = np.concatenate(logits)
         
-    print(f'Test_Loss: {error:0.4f}, Test_Accuracy:{acc:0.4f}\n')
     return(out_pr,logits,gt_list,error,acc)
 
 
 # Evaluation Metrics
 def evaluation_metrics(pr_tot,logits,gt_list,device,ig_sam=0): 
     
-    #pr_tot = np.stack(pr_tot,axis=0)
-    
-    #logits = np.stack(logits,axis=0)
-    
-    print(f'\ntot_ens:{pr_tot.shape}')
     
     pr_tot = torch.from_numpy(pr_tot[ig_sam:])
     
@@ -340,13 +326,6 @@ def evaluation_metrics(pr_tot,logits,gt_list,device,ig_sam=0):
     
     tot_ens = pr_tot.size()[0]
     
-    print(f'ig_sam:{ig_sam}')
-    
-    print(f'con_ens:{pr_tot.size()[0]}')
-    
-    pr_logits = nn.LogSoftmax(dim=2)
-    
-    mean_pr_logits = torch.mean(pr_logits(logits),0).to(device)
     
     mean_logits = torch.mean(logits,dim=0).to(device)
     
@@ -360,20 +339,9 @@ def evaluation_metrics(pr_tot,logits,gt_list,device,ig_sam=0):
     
     gt = torch.tensor(gt_list).to(device)
     
-    nll = nn.NLLLoss()(mean_pr_logits,gt)
+    nll = nn.CrossEntropyLoss()(mean_logits,gt)
     
-    nll2 = nn.CrossEntropyLoss()(mean_logits,gt)
-    
-    wandb.run.summary['test_acc'] = acc
-    wandb.run.summary['test_NLL'] = nll
-    wandb.run.summary['test_NLL_CE'] = nll2
-    
-    print('\n')
-    print(f'########## Total Accuracy and NLL for {tot_ens} Ens ###########')    
-    print(f'\n total nll is: {nll:0.4f}, nll_ce:{nll2:0.4f} and total accuracy is: {acc:0.4f}')    
-    print(f'#############################################')
-    
-    return(nll,nll2,acc)
+    return(nll,acc)
     
 #### Fine Tunning
 parser = argparse.ArgumentParser(description='Baysian Byol finetunning')
