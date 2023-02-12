@@ -30,31 +30,6 @@ from sklearn.model_selection import ShuffleSplit
 import warnings 
 warnings.filterwarnings('ignore')
 
-
-#### Plutcurve
-
-def plotCurves(stats,results_dir=None):
-    
-    fig = plt.figure(figsize=(12, 6))
-    
-    plt.subplot(1,1,1)
-
-    plt.plot(stats['train'], label='train_loss')
-    plt.plot(stats['val'], label='valid_loss')
-        
-    textsize = 12
-    marker=5
-        
-    plt.xlabel('Epochs')
-    
-    plt.ylabel('Loss')
-    
-    plt.title('NLL')
-
-    lgd = plt.legend(['train', 'validation'], markerscale=marker, 
-                 prop={'size': textsize, 'weight': 'normal'})    
-    
-    plt.savefig(results_dir , bbox_extra_artists=(lgd,), bbox_inches='tight')
     
 
 #### Data augmentation 
@@ -153,8 +128,6 @@ class network(nn.Module):
         
         self.net = net
         
-        #self.resnet = models.resnet18(pretrained=False, progress=True)
-        
         ## Here we get representations from avg_pooling layer
         self.encoder = torch.nn.Sequential(*list(backbone.children())[:-1])
         self.projection = MLP(in_dim= backbone.fc.in_features,mlp_hid_size=mid_dim,proj_size=out_dim) 
@@ -163,18 +136,13 @@ class network(nn.Module):
     def forward(self,x):
         
         embedding = self.encoder(x)
-        #print(f'embedding: {embedding.size()}')
-        
         embedding = embedding.view(embedding.size()[0],-1)
         project = self.projection(embedding)
-        #print(f'projection:{project.size()}')
         
         if self.net=='target':
             return(project)
         
         predict = self.prediction(project)
-        
-        #print(f'predict:{predict.size()}')
         return(predict)
 
     
@@ -280,110 +248,6 @@ class SGHM(Optimizer):
                     p.data.add_(d_p)        
         return(loss)
 
-##### SGHMC3 optimizer based on csghmc implimentation
-DEFAULT_DAMPENING = 0.0
-class SGHM3(Optimizer): 
-
-    def __init__(self,params,
-                 lr=required,
-                 momentum=0.99, 
-                 dampening=0.,
-                 weight_decay=0.,
-                 N_train=0.,
-                 temp=1.0,
-                 addnoise=True,
-                 epoch_noise=False):
-            
-        if weight_decay <0.0:
-            
-            raise ValueError("Invalid weight_decay value:{}".format(weight_decay))
-            
-        if lr is not required and lr < 0.0:
-            
-            raise ValueError("Invalid leraning rate:{}".format(lr))
-            
-        if momentum < 0.0:
-            
-            raise ValueError("Invalid momentum value: {}".format(momentum))
-            
-        defaults = dict(lr=lr,
-                        momentum=momentum,
-                        dampening=dampening,
-                        weight_decay=weight_decay,
-                        N_train=N_train,
-                        temp=temp,
-                        addnoise=addnoise,
-                        epoch_noise=epoch_noise)
-        
-        super(SGHM3, self).__init__(params, defaults)
-        
-    def step(self,closure=None):
-            
-        """a single optimization step"""
-            
-        loss = None
-            
-        if closure is not None:
-                
-            with torch.enable_grad():
-                loss = closure()
-            
-        for group in self.param_groups:
-                
-            momentum = group['momentum']
-            dampening = group['dampening']
-            weight_decay = group['weight_decay']
-            N_train = group['N_train']
-            temp = group['temp']
-            epoch_noise = group['epoch_noise']
-            
-            for p in group['params']:
-                    
-                if p.grad is None:
-                        
-                    continue
-                        
-                d_p = p.grad
-                    
-                if weight_decay!=0:
-
-                    d_p.add_(p, alpha=weight_decay)
-                    
-                if momentum != 0:
-
-                    param_state = self.state[p]
-
-                    if 'momentum_buffer' not in param_state:
-                        
-                        #p.buf = torch.zeros(p.size()).cuda(device_id)
-                        
-                        buf = param_state['momentum_buffer'] = torch.zeros_like(d_p).detach()
-                        
-                    else:
-                        
-                        buf = param_state['momentum_buffer']
-
-                        buf.mul_((1-momentum)).add_(d_p, alpha=-group['lr'])
-
-                if group['addnoise'] and group['epoch_noise']:
-                    
-                    noise = torch.randn_like(p.data).mul_((temp * group['lr']*momentum*2/N_train)**0.5)
-
-                    buf.add_(noise)
-
-                    
-                    if torch.isnan(p.data).any(): exit('Nan param')
-                    
-                    if torch.isinf(p.data).any(): exit('inf param')
-                    
-                p.data.add_(buf) 
-                
-                # update momentum
-                param_state['momentum_buffer'] = buf
-                
-        return(loss)
-
-
     
 #### Cyclical step learning 
 
@@ -399,17 +263,10 @@ def update_lr(lr0,batch_idx,cycle_batch_length,n_sam_per_cycle,optimizer):
     
     lr = lr0 * (min_v +(1.0-min_v)*0.5*(np.cos(np.pi * pfriction)+1.0))
     
-    if prop==0:
-        
-        # sanity check of cyclic schedule learning rate 
-        print(f'Biggining of cycle : iteration: {batch_idx}, lr: {lr:0.7f}')
             
-
     if prop >= cycle_batch_length-n_sam_per_cycle:
 
         is_end_of_cycle = True
-
-        print(f'End of cycle: iteration : {batch_idx}, lr: {lr:0.7f}')
 
     for param_group in optimizer.param_groups:
 
@@ -459,7 +316,7 @@ parser.add_argument('--proj_size',type=int, choices=(128,256,2048), default=128,
                        help='the size of projection map')
 
 # optimizer 
-parser.add_argument('--optimizer',type=str, default='sghm', choices=('adam','sgd','sghm','sghm3'),
+parser.add_argument('--optimizer',type=str, default='sghm', choices=('adam','sgd','sghm'),
                        help='the optimizer to use')
 
 parser.add_argument('--base_target_ema',type=float, choices=(0,1), default=0.996,
@@ -509,7 +366,7 @@ parser.add_argument('--wd',type=float,default=1,choices=(0,1,0.1,0.075,0.05,0.01
 parser.add_argument('--clip_grad',type = bool, default=False, 
                         help = 'If we want to clip grad or not! (we need it when we scale loss)')
 
-# inject noise & saving cechpoints
+# inject noise & saving checkpoints
 parser.add_argument('--epoch-noise',type =int, default=45, 
                         help = 'The epoch that we want to inject the noise, (set 0 if we do not want to inject noise)!')
 
@@ -523,7 +380,7 @@ parser.add_argument('--n_sam_cycle',type=int, default=1,
                        help='number of samples in each cycle')
 
 parser.add_argument('--N_samples',type =int, default=13, 
-                        help = 'Number of sample weights that we want to take!')
+                        help = 'Number of checkpoints that we want to take!')
 
 parser.add_argument('--scale',type =bool, default =False, 
                         help = 'If we want to scale the loss or not!')
@@ -545,7 +402,6 @@ def main(args):
     ## setting device 
     device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
     use_cuda = torch.cuda.is_available()
-    print(f'\ndevice:{device}')
     
     ## making directory to save checkpoints 
     save_dir = Path('/dhc/home/masoumeh.javanbakhat/netstore-old/Baysian/3D/Self_Supervised')
@@ -580,8 +436,6 @@ def main(args):
         dataset = datasets.STL10('./data', split='unlabeled',transform=pair_aug(get_transform(args.in_size,args.ds,args.s)),\
                                  download = True)
         
-        print(f'len stl10 unlabeld:{len(dataset)}')
-        
     elif args.ds == 'tinyimagenet':
         path_tinyimagenet = save_dir/'core'/'data'/'tiny-imagenet-200'/'train'
         dataset = datasets.ImageFolder(path_tinyimagenet,transform=pair_aug(get_transform(args.in_size,args.ds,args.s)))
@@ -592,11 +446,9 @@ def main(args):
     
     ## Setting parameters for cyclic learning rate schedule
     N_train = len(train_loader.dataset)
-    print(f'\nNumber of samples in trainset:{N_train}')
     n_batch = len(train_loader)
     cycle_batch_length = args.cycle_length * n_batch
     batch_idx = 0
-    print(f'\nNumber of batches in each cycle: {cycle_batch_length} batch\n')
     
     ## getting models 
     if args.model_depth=="res18":
@@ -624,12 +476,6 @@ def main(args):
         optimizer = SGHM(params=online_network.parameters(),lr=args.lr,weight_decay=args.wd/N_train,momentum=0.9,\
                          temp=args.temp,addnoise=1,dampening=DEFAULT_DAMPENING,N_train=N_train)
         
-        print(f'weight decay: {args.wd/N_train}\n')
-        
-    elif args.optimizer=='sghm3':
-        
-        optimizer = SGHM3(params=online_network.parameters(),lr=args.lr,weight_decay=args.wd/N_train,momentum=0.9,\
-                         temp=args.temp,addnoise=1,epoch_noise=True,dampening=DEFAULT_DAMPENING,N_train=N_train)
         
         
     # initilizing target_network
@@ -646,7 +492,6 @@ def main(args):
     print(f'training is started')
     for epoch in range(args.num_epochs):
         
-        # time for training and val
         tic = time.time()
         
         for phase in ['train','val']:
@@ -697,7 +542,7 @@ def main(args):
                     online_network.cuda()
                             
                     print(f'sample {mt} from {args.N_samples} was taken!')
-                    print(f'sampled epoch lr:%.7f'%(optimizer.param_groups[0]['lr']))
+                    
             
         
         toc = time.time()
@@ -723,17 +568,13 @@ def main(args):
                 'model':online_network.state_dict(),
                 'optimizer':optimizer.state_dict(),
                 'Loss':history['val'][epoch]},os.path.join(save_dir_epoch,f'{args.exp}_last_{args.model_type}byol.pt'))
-    print(f'save last model')
     
     ### save markov chain samples
     if args.save_sample: 
-        #torch.save(weight_set_samples,save_dir+f'/samples/{args.optimizer}_{args.exp}_state_dicts.pt')
         torch.save(sampled_epochs,save_dir / 'samples' / args.ds /f'{args.optimizer}_{args.exp}_epochs.pt')
          
-        print(f'save mcmc samples!')
     
     ### plot learning curve
-    print('printing lr curves')
     plotCurves(history,save_dir / 'lr_curves'/ 'pretrain' / args.ds / f'exp_{args.exp}_{args.model_type}loss.png')    
                                
             
@@ -757,8 +598,6 @@ def loss_fn(online_network,target_network,img1,img2,phase):
     
         loss += reg_loss(onl_pred2,tar_proj1)
     
-        ### Note that in implimentation they return loss.mean()
-        ### Here we compute loss per batch
         return(loss.mean())
         
 
@@ -809,7 +648,6 @@ def Train(online_network,target_network,optimizer,img1,img2,phase,N_train,batch_
         optimizer.step()
         
         # Update target network
-        # update_tau(epoch)
         tau = args.base_target_ema
     
         for online_params,target_params in zip(online_network.parameters(),target_network.parameters()):
